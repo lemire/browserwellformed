@@ -6,3 +6,5 @@ This is an in-browser benchmark for the `toWellFormed` method:
 
 - [Visit the benchmark](https://simdutf.github.io/browserwellformed/html/index.html).
 
+
+We also include a benchmark that you can run using Node.js.
