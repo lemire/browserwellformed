@@ -1,0 +1,24 @@
+{
+  "name": "browserwellformed",
+  "version": "1.0.0",
+  "description": "The `String.prototype.toWellFormed()` method returns a string where all lone surrogates are replaced with the Unicode replacement character U+FFFD. This ensures that the string is well-formed UTF-16.",
+  "main": "bench.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lemire/browserwellformed.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/lemire/browserwellformed/issues"
+  },
+  "homepage": "https://github.com/lemire/browserwellformed#readme",
+  "dependencies": {
+    "benchmark": "^2.1.4"
+  }
+}
