@@ -19,13 +19,13 @@ jobs:
       - name: Build with Jekyll
         uses: actions/jekyll-build-pages@v1
         with:
-          source: ./html
-          destination: ./_site
+          source: ./docs
+          destination: ./docs/_site
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: _site    # folder that contains the built site
+          path: ./docs/_site    # folder that contains the built site
 
   deploy:
     needs: build

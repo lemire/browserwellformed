@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>String.toWellFormed() Benchmark</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; line-height: 1.5; }
+  pre { background: #f4f4f4; padding: 16px; border-radius: 8px; overflow-x: auto; }
+  input, button, select { font-size: 1rem; padding: 8px 12px; margin-right: 8px; }
+  #results { margin-top: 20px; font-family: monospace; white-space: pre; }
+  .note { font-size: 0.9rem; color: #555; }
+  #spinner {
+    display: none;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 2s linear infinite;
+    margin: 20px auto;
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+</style>
+<!-- Benchmarking library (Benchmark.js) -->
+<script src="lodash.min.js"></script>
+<script src="benchmark.min.js"></script>
+<script src="chart.min.js"></script>
+</head>
+<body>
+
+<h1>String.toWellFormed() Benchmark</h1>
+
+<p>The <code>String.prototype.toWellFormed()</code> method returns a string where all lone surrogates are replaced with the Unicode replacement character U+FFFD. This ensures that the string is well-formed UTF-16.</p>
+<p>This page benchmarks the <code>toWellFormed()</code> method that landed in browsers in 2024.</p>
+
+<p>This new function is fast and ensures string well-formedness.</p>
+
+<pre class="code_syntax" style="color:#000000;background:#ffffff;"><span class="line_wrapper">const wellFormed <span style="color:#808030; ">=</span> str<span style="color:#808030; ">.</span>toWellFormed<span style="color:#808030; ">(</span><span style="color:#808030; ">)</span><span style="color:#808030; ">;</span>      <span style="color:#44aadd; ">//</span> well-formed string</span></pre>
+
+<p>To see how fast the function is in your browser, hit the button.</p>
+
+
+<div>
+  <button id="start">Run Benchmark</button>
+</div>
+
+<div id="spinner"></div>
+
+<div id="results"></div>
+
+<canvas id="chart" width="800" height="400"></canvas>
+
+
+<script>
+// Helper to format bytes nicely
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KiB';
+  return (bytes/(1024*1024)).toFixed(2) + ' MiB';
+}
+
+
+document.getElementById('start').addEventListener('click', () => {
+  const resultsDiv = document.getElementById('results');
+
+  // Check support first
+  if (typeof String.prototype.toWellFormed !== 'function') {
+    resultsDiv.textContent = 'Error: Your browser does not support the native String.toWellFormed() method yet.\nUpdate to a recent browser version.';
+    return;
+  }
+
+  resultsDiv.textContent = 'Running…\n';
+
+
+  // Show spinner and disable button
+  document.getElementById('spinner').style.display = 'block';
+  document.getElementById('start').disabled = true;
+
+  setTimeout(async () => {
+
+    // Use a lightweight pseudo-random generator to avoid overloading
+    // the system RNG when generating large strings repeatedly.
+    function pseudoRandomString(len) {
+      let str = '';
+      // simple 32-bit LCG seeded by Math.random()
+      let seed = Math.floor(Math.random() * 0xFFFFFFFF) >>> 0;
+      for (let i = 0; i < len; i++) {
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        const rand = seed % 100;
+        if (rand < 5) { // 5% chance of lone high surrogate
+          str += String.fromCharCode(0xD800 + (seed % 1024));
+        } else if (rand < 10) { // 5% chance of lone low surrogate
+          str += String.fromCharCode(0xDC00 + (seed % 1024));
+        } else { // 90% normal ASCII
+          str += String.fromCharCode(32 + (seed % 95)); // printable ASCII
+        }
+      }
+      return str;
+    }
+
+    // Check if a string is well-formed (no lone surrogates)
+    function isWellFormed(str) {
+      for (let i = 0; i < str.length; i++) {
+        const code = str.charCodeAt(i);
+        if (code >= 0xD800 && code <= 0xDBFF) { // high surrogate
+          if (i + 1 >= str.length || str.charCodeAt(i + 1) < 0xDC00 || str.charCodeAt(i + 1) > 0xDFFF) {
+            return false; // lone high surrogate
+          }
+          i++; // skip the low surrogate
+        } else if (code >= 0xDC00 && code <= 0xDFFF) { // low surrogate without high
+          return false;
+        }
+      }
+      return true;
+    }
+
+    // Payload sizes to test (fixed list; selector removed)
+    const sizeOptions = [1024, 16384, 32768, 65536];
+    resultsDiv.textContent = 'Running benchmarks for all payload sizes...\n\n';
+
+    const results = [];
+
+    // run sequentially for each size
+    for (const s of sizeOptions) {
+      resultsDiv.textContent += `--- String length: ${s.toLocaleString()} chars ---\n`;
+
+      const str = pseudoRandomString(s);
+
+      
+
+      // Using Benchmark.js: return a promise that resolves when suite completes
+      await new Promise((resolve) => {
+        const suite = new Benchmark.Suite();
+
+        suite.add('String.toWellFormed()', function() {
+          str.toWellFormed();
+        }, { minSamples: 5 });
+        suite.on('cycle', function(event) {
+          const name = event.target.name;
+          const hz = event.target.hz || 0;
+          const ms = hz > 0 ? 1000 / hz : Infinity;
+          const bytes = s * 2; // UTF-16 bytes
+          const mbps = hz > 0 ? (bytes * hz / (1024*1024)) : 0;
+          const moeMs = event.target.stats.moe * 1000;
+          const relError = isFinite(ms) ? (moeMs / ms) * 100 : 0;
+          const msDisplay = isFinite(ms) ? Number(ms).toPrecision(3) : '∞';
+          const line = `${name.padEnd(32)} ${msDisplay} ms (±${relError.toFixed(2)}%) → ${mbps.toFixed(2)} MiB/s\n`;
+          resultsDiv.textContent += line;
+          results.push({ size: s, name, hz, mbps: parseFloat(mbps), moe: moeMs, relError });
+        });
+
+        suite.on('complete', function() {
+          const fastest = suite.filter('fastest').map('name');
+          resultsDiv.textContent += `Fastest: ${fastest.join(', ')}\n\n`;
+          resolve();
+        });
+
+        suite.run({ async: true });
+      });
+    }
+    // All benchmarks finished — prepare and draw chart
+    try {
+      // Hide spinner and re-enable button
+      document.getElementById('spinner').style.display = 'none';
+      document.getElementById('start').disabled = false;
+
+      // Prepare labels (sizes) and datasets
+      const sizes = [...new Set(results.map(r => r.size))].sort((a,b)=>a-b);
+      const labels = sizes.map(s => s.toLocaleString() + ' chars');
+
+      const names = Array.from(new Set(results.map(r => r.name)));
+      const datasets = names.map((name, idx) => {
+        const data = sizes.map(sz => {
+          const entry = results.find(r => r.size === sz && r.name === name);
+          return entry ? entry.mbps : 0;
+        });
+        const colors = ['#4e79a7','#f28e2b','#e15759','#76b7b2'];
+        return {
+          label: name,
+          data,
+          backgroundColor: colors[idx%colors.length],
+        };
+      });
+
+      // Destroy previous chart if any
+      if (window._wellFormedChart instanceof Chart) {
+        window._wellFormedChart.destroy();
+      }
+
+      const ctx = document.getElementById('chart').getContext('2d');
+      window._wellFormedChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          plugins: {
+            title: { display: true, text: 'toWellFormed Benchmark (MiB/s) by string size' },
+            tooltip: { 
+              mode: 'index', 
+              intersect: false,
+              callbacks: {
+                label: function(context) {
+                  const size = sizes[context.dataIndex];
+                  const name = context.dataset.label;
+                  const entry = results.find(r => r.size === size && r.name === name);
+                  const relError = entry ? entry.relError : 0;
+                  return `${name}: ${context.parsed.y.toFixed(2)} MiB/s (±${relError.toFixed(2)}%)`;
+                }
+              }
+            }
+          },
+          scales: {
+            y: { beginAtZero: true, title: { display: true, text: 'MiB/s' } }
+          }
+        }
+      });
+    } catch (e) {
+      resultsDiv.textContent += `\nChart error: ${e.message}\n`;
+    }
+  }, 50);
+});
+</script>
+
+</body>
+</html>
